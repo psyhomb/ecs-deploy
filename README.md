@@ -9,8 +9,9 @@ Usage
 -----
 
     One of the following is required:
-        -n | --service-name     Name of service to deploy
-        -d | --task-definition  Name of task definition to deploy
+        -n | --service-name           Name of service to deploy
+        -d | --task-definition        Name of task definition to deploy
+        -f | --task-definition-file   Path to task definition file (JSON) to deploy
 
     Required arguments:
         -k | --aws-access-key         AWS Access Key ID. May also be set as environment variable AWS_ACCESS_KEY_ID
@@ -61,6 +62,10 @@ Usage
       Updating a task definition with a new image:
 
         ecs-deploy -d open-door-task -i docker.repo.com/doorman:17
+
+      Updating a task definition from the local file with a new image:
+
+        ecs-deploy -n doorman-service -f open-door-task.json -i docker.repo.com/doorman:17
 
       Using profiles (for STS delegated credentials, for instance):
 
