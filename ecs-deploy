@@ -5,6 +5,7 @@ VERSION="3.4.0"
 CLUSTER=false
 SERVICE=false
 TASK_DEFINITION=false
+TASK_DEFINITION_FILE=false
 MAX_DEFINITIONS=0
 AWS_ASSUME_ROLE=false
 IMAGE=false
@@ -273,6 +274,17 @@ function parseImageName() {
 
 function getCurrentTaskDefinition() {
     if [ $SERVICE != false ]; then
+      if [[ ${TASK_DEFINITION_FILE##*.} == "json" ]]; then
+          set +e
+          TASK_DEFINITION=`cat ${TASK_DEFINITION_FILE} 2> /dev/null`
+          if [[ ${?} -ne 0 ]]; then
+              echo "Task definition file ${TASK_DEFINITION_FILE} does not exist!"
+              exit 6
+          fi
+          set -e
+          return 0
+      fi
+
       # Get current task definition arn from service
       TASK_DEFINITION_ARN=`$AWS_ECS describe-services --services $SERVICE --cluster $CLUSTER | jq -r .services[0].taskDefinition`
       TASK_DEFINITION=`$AWS_ECS describe-task-definition --task-def $TASK_DEFINITION_ARN`
@@ -298,14 +310,31 @@ function createNewTaskDefJson() {
     # + Update definition to use new image name
     # + Filter the def
     if [[ "x$TAGONLY" == "x" ]]; then
-      DEF=$( echo "$TASK_DEFINITION" \
+      if [[ ${TASK_DEFINITION_FILE##*.} == "json" ]]; then
+        DEF=$( echo "$TASK_DEFINITION" \
+            | sed -e "s|\"image\": *\"${imageWithoutTag}:.*\"|\"image\": \"${useImage}\"|g" \
+            | sed -e "s|\"image\": *\"${imageWithoutTag}\"|\"image\": \"${useImage}\"|g" )
+
+        NEW_DEF=${DEF}
+        return 0
+      else
+        DEF=$( echo "$TASK_DEFINITION" \
             | sed -e "s|\"image\": *\"${imageWithoutTag}:.*\"|\"image\": \"${useImage}\"|g" \
             | sed -e "s|\"image\": *\"${imageWithoutTag}\"|\"image\": \"${useImage}\"|g" \
             | jq '.taskDefinition' )
+      fi
     else
-      DEF=$( echo "$TASK_DEFINITION" \
+      if [[ ${TASK_DEFINITION_FILE##*.} == "json" ]]; then
+        DEF=$( echo "$TASK_DEFINITION" \
+            | sed -e "s|\(\"image\": *\".*:\)\(.*\)\"|\1${useImage}\"|g" )
+
+        NEW_DEF=${DEF}
+        return 0
+      else
+        DEF=$( echo "$TASK_DEFINITION" \
             | sed -e "s|\(\"image\": *\".*:\)\(.*\)\"|\1${useImage}\"|g" \
             | jq '.taskDefinition' )
+      fi
     fi
 
     # Default JQ filter for new task definition
@@ -527,6 +556,10 @@ if [ "$BASH_SOURCE" == "$0" ]; then
                 TASK_DEFINITION="$2"
                 shift
                 ;;
+            -f|--task-definition-file)
+                TASK_DEFINITION_FILE="$2"
+                shift
+                ;;
             -i|--image)
                 IMAGE="$2"
                 shift
@@ -613,7 +646,11 @@ if [ "$BASH_SOURCE" == "$0" ]; then
 
     # Get current task definition
     getCurrentTaskDefinition
-    echo "Current task definition: $TASK_DEFINITION_ARN";
+    if [[ ${TASK_DEFINITION_FILE##*.} == "json" ]]; then
+        echo "Current task definition: ${TASK_DEFINITION_FILE}";
+    else
+        echo "Current task definition: $TASK_DEFINITION_ARN";
+    fi
 
     # create new task definition json
     createNewTaskDefJson
