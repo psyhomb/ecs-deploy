@@ -19,6 +19,7 @@ ENABLE_ROLLBACK=false
 USE_MOST_RECENT_TASK_DEFINITION=false
 AWS_CLI=$(which aws)
 AWS_ECS="$AWS_CLI --output json ecs"
+FORCE_TASK_STOP=false
 FORCE_NEW_DEPLOYMENT=false
 SKIP_DEPLOYMENTS_CHECK=false
 RUN_TASK=false
@@ -56,6 +57,7 @@ Optional arguments:
     -to | --tag-only             New tag to apply to all images defined in the task (multi-container task). If provided this will override value specified in image name argument.
     --max-definitions            Number of Task Definition Revisions to persist before deregistering oldest revisions.
     --enable-rollback            Rollback task definition if new version is not running before TIMEOUT
+    --force-task-stop            Forcibly stop ECS tasks for specified service. Default is false.
     --force-new-deployment       Force a new deployment of the service. Default is false.
     --use-latest-task-def   Will use the most recently created task definition as it's base, rather than the last used.
     --skip-deployments-check     Skip deployments check for services that take too long to drain old tasks
@@ -367,6 +369,24 @@ function createNewTaskDefJson() {
     fi
 }
 
+function stopTasksForcibly() {
+    local RUNNING_TASKS=$(${AWS_ECS} list-tasks --cluster ${CLUSTER} --service-name ${SERVICE} --desired-status RUNNING | jq -r '.taskArns[]')
+
+    # When stop-task is called on a task, the equivalent of docker stop is issued to the containers running in the task.
+    # This results in a SIGTERM value and a default 30-second timeout,
+    # after which the SIGKILL value is sent and the containers are forcibly stopped.
+    # If the container handles the SIGTERM value gracefully and exits within 30 seconds from receiving it, no SIGKILL value is sent.
+    local FIRST_TASK="true"
+    for RUNNING_TASK in ${RUNNING_TASKS}; do
+        ${AWS_ECS} stop-task --cluster ${CLUSTER} --task ${RUNNING_TASK} --reason "Task stopped by deployment script" > /dev/null
+
+        if [[ ${FIRST_TASK} == "true" ]]; then
+            local FIRST_TASK="false"
+            sleep 15
+        fi
+    done
+}
+
 function registerNewTaskDefinition() {
     # Register the new task definition, and store its ARN
     NEW_TASKDEF=`$AWS_ECS register-task-definition --cli-input-json "$NEW_DEF" | jq -r .taskDefinition.taskDefinitionArn`
@@ -402,6 +422,12 @@ function updateService() {
 
     # Update the service
     UPDATE=`$AWS_ECS update-service --cluster $CLUSTER --service $SERVICE $DESIRED_COUNT --task-definition $NEW_TASKDEF $DEPLOYMENT_CONFIG`
+
+    # Forcibly stop the tasks and let the service recover using the new task definitition.
+    if [[ ${FORCE_TASK_STOP} == "true" ]]; then
+        echo "Forcibly stopping the running tasks for service ${SERVICE} in cluster ${CLUSTER}"
+        stopTasksForcibly
+    fi
 
     # Only excepts RUNNING state from services whose desired-count > 0
     SERVICE_DESIREDCOUNT=`$AWS_ECS describe-services --cluster $CLUSTER --service $SERVICE | jq '.services[]|.desiredCount'`
@@ -598,6 +624,9 @@ if [ "$BASH_SOURCE" == "$0" ]; then
                 ;;
             --use-latest-task-def)
                 USE_MOST_RECENT_TASK_DEFINITION=true
+                ;;
+            --force-task-stop)
+                FORCE_TASK_STOP=true
                 ;;
             --force-new-deployment)
                 FORCE_NEW_DEPLOYMENT=true
