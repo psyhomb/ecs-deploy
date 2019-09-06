@@ -40,6 +40,7 @@ Usage
                                             Script will only perform deregistration if deployment succeeds.
         --enable-rollback             Rollback task definition if new version is not running before TIMEOUT
         --use-latest-task-def         Will use the most recently created task definition as it's base, rather than the last used.
+        --force-task-stop             Forcibly stop ECS tasks for specified service. Default is false.
         --force-new-deployment        Force a new deployment of the service. Default is false.
         --skip-deployments-check      Skip deployments check for services that take too long to drain old tasks
         --run-task                    Run created task now. If you set this, service-name are not needed.
