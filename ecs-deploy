@@ -9,6 +9,7 @@ TASK_DEFINITION_FILE=false
 MAX_DEFINITIONS=0
 AWS_ASSUME_ROLE=false
 IMAGE=false
+MATCH_IMAGE_NAME=false
 MIN=false
 MAX=false
 TIMEOUT=90
@@ -55,6 +56,8 @@ Optional arguments:
     -t | --timeout               Default is 90s. Script monitors ECS Service for new task definition to be running.
     -e | --tag-env-var           Get image tag name from environment variable. If provided this will override value specified in image name argument.
     -to | --tag-only             New tag to apply to all images defined in the task (multi-container task). If provided this will override value specified in image name argument.
+    --match-image-name           If multi-container task is used, image tag will be replaced only if image name (w/o tag) in task definition file has match to image name (w/o tag) specified with --image argument.
+                                 Must be used with --task-definition-file argument and without --tag-only argument.
     --max-definitions            Number of Task Definition Revisions to persist before deregistering oldest revisions.
     --enable-rollback            Rollback task definition if new version is not running before TIMEOUT
     --force-task-stop            Forcibly stop ECS tasks for specified service. Default is false.
@@ -328,8 +331,13 @@ function createNewTaskDefJson() {
       fi
     else
       if [[ ${TASK_DEFINITION_FILE##*.} == "json" ]]; then
-        DEF=$( echo "$TASK_DEFINITION" \
-            | sed -e "s|\(\"image\": *\".*:\)\(.*\)\"|\1${useImage}\"|g" )
+        if [[ ${MATCH_IMAGE_NAME} == "true" ]]; then
+          DEF=$( echo "$TASK_DEFINITION" \
+              | sed -e "s|\(\"image\": *\"${imageWithoutTag}:\)\(.*\)\"|\1${useImage}\"|g" )
+        else
+          DEF=$( echo "$TASK_DEFINITION" \
+              | sed -e "s|\(\"image\": *\".*:\)\(.*\)\"|\1${useImage}\"|g" )
+        fi
 
         NEW_DEF=${DEF}
         return 0
@@ -618,6 +626,9 @@ if [ "$BASH_SOURCE" == "$0" ]; then
             --max-definitions)
                 MAX_DEFINITIONS="$2"
                 shift
+                ;;
+            --match-image-name)
+                MATCH_IMAGE_NAME=true
                 ;;
             --enable-rollback)
                 ENABLE_ROLLBACK=true
